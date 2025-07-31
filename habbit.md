@@ -1,3 +1,8 @@
 # habbit.md
 
-Start writing here.
+Start writing here.**
+
+```
+this is some code
+```
+
