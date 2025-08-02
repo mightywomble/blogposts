@@ -1,4 +1,4 @@
-## From Digital Chaos to a Personal AI Knowledgebase: My "Vibe-Coded" Journey
+# From Digital Chaos to a Personal AI Knowledgebase: My "Vibe-Coded" Journey
 
 In the endless sea of information that is the internet, how many times have you found a golden nugget of knowledge, only to lose it again in the digital ether? I found myself in this situation one too many times. That's when I decided to build my own solution: an **AI Knowledgebase**, a personal, searchable database to store and retrieve all the valuable insights I gather from Google searches and AI interactions. This is the story of how I "vibe-coded" my way to a more organized digital life.
 
