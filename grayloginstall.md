@@ -1,961 +1,217 @@
-# Ubuntu 24.04 Graylog Setup
+# Taming the Log Tsunami: Your Guide to Graylog on Ubuntu 24.04
 
-## Server Setup
+Ever felt the frustration of jumping between a dozen different servers, `tail`-ing log files, and trying to piece together what went wrong during an outage? 😩 It's a digital scavenger hunt nobody wants to play. This is where centralized logging comes to the rescue.
 
-Some notes and observations
+**Graylog** is a powerful, open-source platform that collects, indexes, and analyzes log data from virtually any source. Instead of your logs being scattered across your entire infrastructure, they're all sent to one central place. This allows you to:
 
-### → Ram/CPU
-
-Don’t be scared here, you’re going to need as much as you can spare, especially on a busy servers. I’ve used 8vCPU’s and 12Gb Ram
-
-## Server Installation - Graylog
-
-### → Mongo Db
-
-**REFERENCE**: [https://www.mongodb.com/docs/manual/tutorial/install-mongodb-on-debian/](https://www.mongodb.com/docs/manual/tutorial/install-mongodb-on-debian/)
-
-The Instructions on the Graylog page refer to version 6.x of Mongodb which just do not work, they do refer to a link to the 7.x install which is the one to follow.
-
-```
-sudo apt-get install gnupg curl
-```
-
-Import the key
-
-```
-curl -fsSL <https://www.mongodb.org/static/pgp/server-7.0.asc> | \\
-   sudo gpg -o /usr/share/keyrings/mongodb-server-7.0.gpg \\
-   --dearmor
-```
-
-Add the repo
-
-```
-echo "deb [ signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] <http://repo.mongodb.org/apt/debian> bookworm/mongodb-org/7.0 main" | sudo tee /etc/apt/sources.list.d/mongodb-org-7.0.list
-```
-
-Update apt
-
-```
-sudo apt-get update
-```
-
-### Install MongoDb
-
-```
-sudo apt-get install -y mongodb-org
-```
-
-Note:
-
-If the `ulimit` value for number of open files is under `64000`, MongoDB generates a startup warning.
-
-```
-ulimit -n 64000
-```
-
-Start the MongoD service
-
-```
-sudo systemctl daemon-reload
-sudo systemctl enable mongod.service
-sudo systemctl restart mongod.service
-sudo systemctl --type=service --state=active | grep mongod
-```
-
-check its running
-
-```
-sudo systemctl status mongod.service
-```
-
-should show
-
-```
-● mongod.service - MongoDB Database Server
-     Loaded: loaded (/lib/systemd/system/mongod.service; enabled; preset: enabled)
-     Active: active (running) since Wed 2024-09-04 10:23:18 UTC; 9s ago
-       Docs: <https://docs.mongodb.org/manual>
-   Main PID: 2338 (mongod)
-     Memory: 76.0M
-        CPU: 639ms
-     CGroup: /system.slice/mongod.service
-             └─2338 /usr/bin/mongod --config /etc/mongod.conf
-```
-
-Lets mark mongo as hold so apt doesn’t upgrade it
-
-```
-sudo apt-mark hold mongodb-org
-```
-
-### → Opensearch
-
-#### Install Opensearch
-
-Openseach is providing the eleastic type search capabilities for Graylog, I’m running this as an All in One server, you could run OpenSearch on a seperate server if you wanted to.
-
-Install needed files
-
-```
-sudo apt-get update && sudo apt-get -y install lsb-release ca-certificates curl gnupg2
-```
-
-Install the repo gpg key
-
-```
-curl -o- <https://artifacts.opensearch.org/publickeys/opensearch.pgp> | sudo gpg --dearmor --batch --yes -o /usr/share/keyrings/opensearch-keyring
-```
-
-Add the repo list
-
-```j
-echo "deb [signed-by=/usr/share/keyrings/opensearch-keyring] <https://artifacts.opensearch.org/releases/bundle/opensearch/2.x/apt> stable main" | sudo tee /etc/apt/sources.list.d/opensearch-2.x.list
-```
-
-Update apt
-
-```
-sudo apt-get update
-```
-
-**Note:**
-
-To move forward we need to generate an admin key for Opensearch
-
-Generate a Key
-
-```
- tr -dc A-Z-a-z-0-9_@#%^-_=+ < /dev/urandom  | head -c${1:-32}
-```
-
-This will return a random key like:
-
-```
-2EhY78l0_cY+6o6YJzD8GUnodOJGO0K6
-```
-
-Now Install Opensearch using the key
-
-```
-sudo OPENSEARCH_INITIAL_ADMIN_PASSWORD=2EhY78l0_cY+6o6YJzD8GUnodOJGO0K6 apt-get -y install opensearch
-```
-
-Hold the version of Openseach (upgrading it might cause problems with an apt update)
-
-```
-sudo apt-mark hold opensearch
-```
-
-We won’t start the service yet as there are config changes to make
-
-#### Opensearch Graylog config
-
-Edit the Openseach config
-
-```
-sudo nano /etc/opensearch/opensearch.yml
-```
-
-Edit/Add the following
-
-```
-# ---------------------------------- Cluster -----------------------------------
-#
-# Use a descriptive name for your cluster:
-#
-cluster.name: homelan
-#
-# ------------------------------------ Node ------------------------------------
-#
-# Use a descriptive name for the node:
-#
-node.name: ${HOSTNAME}
-#
-# Add custom attributes to the node:
-#
-#node.attr.rack: r1
-#
-# ----------------------------------- Paths ------------------------------------
-#
-# Path to directory where to store the data (separate multiple locations by comma):
-#
-path.data: /var/lib/opensearch
-#
-# Path to log files:
-#
-path.logs: /var/log/opensearch
-#
-# ----------------------------------- Added Info -----------------------------------
-discovery.type: single-node
-network.host: 0.0.0.0
-action.auto_create_index: false
-plugins.security.disabled: true
-```
-
-save and exit
-
-Edit the Java Options
-
-```
-sudo nano /etc/opensearch/jvm.options
-```
-
-Change the settings
-
-```
--Xms1g
--Xmx1g
-```
-
-to 50% of your servers ram
-
-```
--Xms4g
--Xmx4g
-```
-
-Save and exit
-
-Edit sysconfig
-
-```
-sudo nano /etc/sysctl.conf
-```
-
-add the line to the end of the file
-
-```
-vm.max_map_count=262144
-```
-
-This will apply the setting over a reboot, to apply it now use
-
-```
-sudo sysctl -w vm.max_map_count=262144
-```
-
-#### Start Opensearch
-
-Start the Opensearch service
-
-```
-sudo systemctl daemon-reload
-sudo systemctl enable opensearch.service
-sudo systemctl start opensearch.service
-```
-
-Check its running
-
-```
-sudo systemctl status opensearch.service
-```
-
-will return
-
-```
- opensearch.service - OpenSearch
-     Loaded: loaded (/lib/systemd/system/opensearch.service; enabled; preset: enabled)
-     Active: active (running) since Wed 2024-09-04 11:52:40 UTC; 1min 6s ago
-       Docs: <https://opensearch.org/>
-   Main PID: 3763 (java)
-      Tasks: 79 (limit: 9358)
-     Memory: 4.3G
-        CPU: 33.293s
-     CGroup: /system.slice/opensearch.service
-             └─3763 /usr/share/opensearch/jdk/bin/java -Xshare:auto -Dopensearch.networkaddress.cache.ttl=60 -Dopensearch.networkaddress.cache.negative.ttl=>
-
-Sep 04 11:52:30 logging systemd-entrypoint[3763]: WARNING: System::setSecurityManager has been called by org.opensearch.bootstrap.OpenSearch (file:/usr/shar>
-Sep 04 11:52:30 logging systemd-entrypoint[3763]: WARNING: Please consider reporting this to the maintainers of org.opensearch.bootstrap.OpenSearch
-Sep 04 11:52:30 logging systemd-entrypoint[3763]: WARNING: System::setSecurityManager will be removed in a future release
-Sep 04 11:52:31 logging systemd-entrypoint[3763]: Sep 04, 2024 12:52:31 PM sun.util.locale.provider.LocaleProviderAdapter <clinit>
-Sep 04 11:52:31 logging systemd-entrypoint[3763]: WARNING: COMPAT locale provider will be removed in a future release
-Sep 04 11:52:31 logging systemd-entrypoint[3763]: WARNING: A terminally deprecated method in java.lang.System has been called
-Sep 04 11:52:31 logging systemd-entrypoint[3763]: WARNING: System::setSecurityManager has been called by org.opensearch.bootstrap.Security (file:/usr/share/>
-Sep 04 11:52:31 logging systemd-entrypoint[3763]: WARNING: Please consider reporting this to the maintainers of org.opensearch.bootstrap.Security
-Sep 04 11:52:31 logging systemd-entrypoint[3763]: WARNING: System::setSecurityManager will be removed in a future release
-Sep 04 11:52:40 logging systemd[1]: Started opensearch.service - OpenSearch.
-```
-
-I’ve ignored the errors for a started service
-
-### → Graylog
-
-#### Install Server
-
-Lets Install the graylog server
-
-```
-wget <https://packages.graylog2.org/repo/packages/graylog-6.0-repository_latest.deb>
-sudo dpkg -i graylog-6.0-repository_latest.deb
-sudo apt-get update
-sudo apt-get install graylog-server
-```
-
-Hold the version in apt
-
-```
-sudo apt-mark hold graylog-server
-```
-
-#### Configure Server
-
-We need 2 passwords for the config file
-
-`password_secret` and `root_password_sha2`
-
-to generate `password_secret` run
-
-```
-< /dev/urandom tr -dc A-Z-a-z-0-9 | head -c${1:-96};echo;
-```
-
-This will generate a long string copy this, you’ll need it in the config file
-
-```
-CjXGDLNLZskEJdPPKnEd1UnvJfsU7iAnePevgw-0Sq0K7ynw1sC3WDF-8L09SHG6lZqCGFweTAhLU1ai2zLFszc9LvbM0CWP
-```
-
-to generate the `root_password_sha2` run:
-
-```
-echo -n "Enter Password: " && head -1 </dev/stdin | tr -d '\\n' | sha256sum | cut -d" " -f1
-```
-
-This will prompt you to enter a password.
-
-This is the password for the admin user on the Graylog web interface
-
-It will generate a long string
-
-```
-5fab5f43d0b2f97526e7daacb1e42ffd178e2067c59a0036d0d984a3bec289fb
-```
-
-again. save this.
-
-Edit the graylog server config
-
-```
-sudo nano /etc/graylog/server/server.conf
-```
-
-Find the two password sections and add the generated strings
-
-```
-# You MUST set a secret to secure/pepper the stored user passwords here. Use at least 64 characters.
-# Generate one by using for example: pwgen -N 1 -s 96
-# ATTENTION: This value must be the same on all Graylog nodes in the cluster.
-# Changing this value after installation will render all user sessions and encrypted values in the database invalid. (e.g. encrypted access tokens)
-password_secret = CjXGDLNLZskEJdPPKnEd1UnvJfsU7iAnePevgw-0Sq0K7ynw1sC3WDF-8L09SHG6lZqCGFweTAhLU1ai2zLFszc9LvbM0CWP
-
-# The default root user is named 'admin'
-#root_username = admin
-
-# You MUST specify a hash password for the root user (which you only need to initially set up the
-# system and in case you lose connectivity to your authentication backend)
-# This password cannot be changed using the API or via the web interface. If you need to change it,
-# modify it in this file.
-# Create one by using for example: echo -n yourpassword | shasum -a 256
-# and put the resulting hash value into the following line
-**root_password_sha2 = 5fab5f43d0b2f97526e7daacb1e42ffd178e2067c59a0036d0d984a3bec289fb**
-```
-
-Find `http_bind_address`
-
-and change it to this
-
-```
-http_bind_address = 0.0.0.0:9000
-```
-
-Find `elasticsearch_hosts`
-
-and change it to this
-
-```
-elasticsearch_hosts = <http://127.0.0.1:9200> 
-```
-
-Save and exit the file
-
-#### Start Server
-
-Run the following
-
-```
-sudo systemctl daemon-reload
-sudo systemctl enable graylog-server.service
-sudo systemctl start graylog-server.service
-sudo systemctl --type=service --state=active | grep graylog
-```
-
-Check Everything is running
-
-```
-sudo systemctl status graylog-server
-```
-
-Should return this
-
-```
-graylog-server.service - Graylog server
-     Loaded: loaded (/lib/systemd/system/graylog-server.service; enabled; preset: enabled)
-     Active: active (running) since Wed 2024-09-04 12:09:22 UTC; 21s ago
-       Docs: <http://docs.graylog.org/>
-   Main PID: 5236 (graylog-server)
-      Tasks: 120 (limit: 9358)
-     Memory: 809.0M
-        CPU: 33.887s
-     CGroup: /system.slice/graylog-server.service
-             ├─5236 /bin/sh /usr/share/graylog-server/bin/graylog-server
-             └─5237 /usr/share/graylog-server/jvm/bin/java -Xms1g -Xmx1g -server -XX:+UseG1GC -XX:-OmitStackTraceInFastThrow -Djdk.tls.acknowledgeCloseNotif>
-
-Sep 04 12:09:22 logging systemd[1]: Started graylog-server.service - Graylog server.
-```
-
-### → Check all services running
-
-At this point we can run some checks to make sure everything is still running
-
-#### Mongodb
-
-```
+* **Search everything at once**: Find errors across all your servers in seconds.
+* **Create alerts**: Get notified automatically when specific errors occur (e.g., failed logins, application crashes).
+* **Build dashboards**: Visualize your data to spot trends and potential problems before they become critical.
+
+In this guide, we'll walk you through setting up a complete Graylog server from scratch on **Ubuntu 24.04**.
+
+***
+
+### → A Note on Server Specs: RAM/CPU
+
+Don't be shy with resources here. A logging server is constantly ingesting, indexing, and serving up data. For a home lab or a small number of busy servers, a virtual machine with **8 vCPUs and 12GB of RAM** is a great starting point. The more logs you throw at it, the more resources it will appreciate!
+
+***
+
+## The A-Team: Installing the Graylog Stack
+
+Graylog doesn't work alone. It relies on a couple of key sidekicks to get the job done. We'll be installing everything on one server for a simple, all-in-one setup.
+
+### → Part 1: MongoDB - The Configuration Brain 🧠
+
+First up, we need a database to store Graylog's configuration. **MongoDB** is a NoSQL database that Graylog uses to keep track of all its settings—user accounts, dashboards, stream rules, inputs, and more.
+
+**Important**: MongoDB does **not** store your log messages. It only stores the application's configuration.
+
+The instructions on the official Graylog page for MongoDB 6.x don't play nicely with Ubuntu 24.04. We'll use the recommended version 7.x instead.
+
+1.  **Install prerequisites and import the official MongoDB GPG key**: This ensures the packages we download are authentic.
+    ```bash
+    sudo apt-get install gnupg curl
+    curl -fsSL [https://www.mongodb.org/static/pgp/server-7.0.asc](https://www.mongodb.org/static/pgp/server-7.0.asc) | \
+       sudo gpg -o /usr/share/keyrings/mongodb-server-7.0.gpg \
+       --dearmor
+    ```
+
+2.  **Add the MongoDB repository**: This tells `apt` where to find the MongoDB packages.
+    ```bash
+    echo "deb [ signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] [http://repo.mongodb.org/apt/debian](http://repo.mongodb.org/apt/debian) bookworm/mongodb-org/7.0 main" | sudo tee /etc/apt/sources.list.d/mongodb-org-7.0.list
+    ```
+
+3.  **Update `apt` and install MongoDB**:
+    ```bash
+    sudo apt-get update
+    sudo apt-get install -y mongodb-org
+    ```
+    If you see a warning about the `ulimit` for open files, you can increase it to the recommended value:
+    ```bash
+    ulimit -n 64000
+    ```
+4.  **Start and enable the MongoDB service**: This ensures it starts automatically on boot.
+    ```bash
+    sudo systemctl daemon-reload
+    sudo systemctl enable mongod.service
+    sudo systemctl restart mongod.service
+    ```
+
+5.  **Check that it's running**:
+    ```bash
+    sudo systemctl status mongod.service
+    ```
+    You should see `Active: active (running)`.
+
+6.  **Lock the version**: This is a smart move to prevent automatic updates from `apt` from accidentally breaking your Graylog setup. We'll hold the package at its current version.
+    ```bash
+    sudo apt-mark hold mongodb-org
+    ```
+
+***
+
+### → Part 2: OpenSearch - The Data Powerhouse ⚡
+
+With the configuration database ready, we need a place to store the actual log messages. **OpenSearch** is a high-performance search and analytics engine. It takes the logs Graylog processes and stores them in a way that makes them incredibly fast to search and analyze. When you ask Graylog to "find all errors from web-server-01 in the last hour," it's OpenSearch that does the heavy lifting.
+
+1.  **Install prerequisites and the OpenSearch GPG key**:
+    ```bash
+    sudo apt-get update && sudo apt-get -y install lsb-release ca-certificates curl gnupg2
+    curl -o- [https://artifacts.opensearch.org/publickeys/opensearch.pgp](https://artifacts.opensearch.org/publickeys/opensearch.pgp) | sudo gpg --dearmor --batch --yes -o /usr/share/keyrings/opensearch-keyring
+    ```
+
+2.  **Add the OpenSearch repository**:
+    ```bash
+    echo "deb [signed-by=/usr/share/keyrings/opensearch-keyring] [https://artifacts.opensearch.org/releases/bundle/opensearch/2.x/apt](https://artifacts.opensearch.org/releases/bundle/opensearch/2.x/apt) stable main" | sudo tee /etc/apt/sources.list.d/opensearch-2.x.list
+    ```
+3.  **Update `apt` and install OpenSearch**:
+    ```bash
+    sudo apt-get update
+    sudo apt-get -y install opensearch
+    ```
+4.  **Lock the version**: Just like with MongoDB, we'll prevent accidental upgrades.
+    ```bash
+    sudo apt-mark hold opensearch
+    ```
+
+#### OpenSearch Configuration for Graylog
+
+Before we start OpenSearch, we need to tune it for our all-in-one Graylog server.
+
+1.  **Edit the main configuration file**:
+    ```bash
+    sudo nano /etc/opensearch/opensearch.yml
+    ```
+    Add or modify the following lines. This tells OpenSearch to run as a single-node cluster (since it's all on one server) and disables the security plugin for simplicity in this initial setup.
+    ```yaml
+    cluster.name: graylog
+    discovery.type: single-node
+    action.auto_create_index: false
+    plugins.security.disabled: true
+    ```
+2.  **Adjust Memory Allocation (JVM Options)**: OpenSearch runs on Java and loves memory. A good rule of thumb is to give it 50% of your server's RAM, but no more than 32GB. For our 12GB server, we'll give it 6GB.
+    ```bash
+    sudo nano /etc/opensearch/jvm.options
+    ```
+    Change the `-Xms` (initial heap size) and `-Xmx` (maximum heap size) values.
+    ```
+    # Change these lines:
+    -Xms1g
+    -Xmx1g
+    
+    # To this (for a 12GB RAM server):
+    -Xms6g
+    -Xmx6g
+    ```
+
+3.  **Tweak Kernel Settings**: OpenSearch requires a high `max_map_count` value for memory management.
+    ```bash
+    sudo nano /etc/sysctl.conf
+    ```
+    Add this line to the end of the file to make the change permanent across reboots:
+    ```
+    vm.max_map_count=262144
+    ```
+    Apply the setting immediately without rebooting:
+    ```bash
+    sudo sysctl -w vm.max_map_count=262144
+    ```
+4.  **Start and enable OpenSearch**:
+    ```bash
+    sudo systemctl daemon-reload
+    sudo systemctl enable opensearch.service
+    sudo systemctl start opensearch.service
+    ```
+    Check its status to ensure it's running. Don't worry about the `System::setSecurityManager` warnings; they are expected.
+
+***
+
+### → Part 3: Graylog - The Main Event 🌟
+
+With our database and search engine in place, it's time to install the star of the show! **Graylog Server** is the application that ties everything together. It runs the web interface, processes incoming logs, and communicates with MongoDB and OpenSearch.
+
+1.  **Download and install the Graylog repository package**:
+    ```bash
+    wget [https://packages.graylog2.org/repo/packages/graylog-6.0-repository_latest.deb](https://packages.graylog2.org/repo/packages/graylog-6.0-repository_latest.deb)
+    sudo dpkg -i graylog-6.0-repository_latest.deb
+    sudo apt-get update
+    sudo apt-get install graylog-server
+    ```
+
+2.  **Lock the version**: Consistency is key!
+    ```bash
+    sudo apt-mark hold graylog-server
+    ```
+
+#### Configure Graylog Server
+
+We need to generate a couple of secret keys and tell Graylog how to connect to OpenSearch.
+
+1.  **Generate a `password_secret`**: This is a long, random string used by Graylog to secure sensitive data like user passwords internally.
+    ```bash
+    < /dev/urandom tr -dc A-Z-a-z-0-9 | head -c96;echo;
+    ```
+    **Copy the output!** It will look something like this: `CjXG...M0CWP`.
+
+2.  **Generate a `root_password_sha2`**: This will be the hashed version of the password for your `admin` user login.
+    ```bash
+    echo -n "Enter Password: " && head -1 </dev/stdin | tr -d '\n' | sha256sum | cut -d" " -f1
+    ```
+    You will be prompted to type your desired admin password. The command will then output a SHA256 hash of it. **Copy this hash!** It will look like: `5fab...289fb`.
+
+3.  **Edit the Graylog configuration file**:
+    ```bash
+    sudo nano /etc/graylog/server/server.conf
+    ```
+    Now, find and update these three crucial settings:
+    * `password_secret`: Paste the long random string you generated first.
+    * `root_password_sha2`: Paste the password hash you generated second.
+    * `http_bind_address`: Change this to `0.0.0.0:9000` to make the web interface accessible from other machines on your network.
+    * `elasticsearch_hosts`: Tell Graylog where to find OpenSearch. Since it's on the same server, we use `http://127.0.0.1:9200`.
+
+    Your config should look like this:
+    ```ini
+    password_secret = CjXGDLNLZskEJdPPKnEd1UnvJfsU7iAnePevgw-0Sq0K7ynw1sC3WDF-8L09SHG6lZqCGFweTAhLU1ai2zLFszc9LvbM0CWP
+    root_password_sha2 = 5fab5f43d0b2f97526e7daacb1e42ffd178e2067c59a0036d0d984a3bec289fb
+    http_bind_address = 0.0.0.0:9000
+    elasticsearch_hosts = [http://127.0.0.1:9200](http://127.0.0.1:9200)
+    ```
+4.  **Start and enable Graylog**:
+    ```bash
+    sudo systemctl daemon-reload
+    sudo systemctl enable graylog-server.service
+    sudo systemctl start graylog-server.service
+    ```
+
+***
+
+## Final Health Check ✅
+
+Let's make sure all three services are up and running happily.
+
+```bash
 sudo systemctl status mongod
-```
-
-```
-● mongod.service - MongoDB Database Server
-     Loaded: loaded (/lib/systemd/system/mongod.service; enabled; preset: enabled)
-     **Active: active (running) since Wed 2024-09-04 10:23:18 UTC; 1h 49min ago**
-       Docs: <https://docs.mongodb.org/manual>
-   Main PID: 2338 (mongod)
-     Memory: 143.6M
-        CPU: 31.374s
-     CGroup: /system.slice/mongod.service
-             └─2338 /usr/bin/mongod --config /etc/mongod.conf
-
-Sep 04 10:23:18 logging systemd[1]: Started mongod.service - MongoDB Database Server.
-Sep 04 10:23:18 logging mongod[2338]: {"t":{"$date":"2024-09-04T10:23:18.570Z"},"s":"I",  "c":"CONTROL",  "id":7484500, "ctx":"main","msg":"Environment vari>
-```
-
-#### Opensearch
-
-```
 sudo systemctl status opensearch
-```
-
-```
-● opensearch.service - OpenSearch
-     Loaded: loaded (/lib/systemd/system/opensearch.service; enabled; preset: enabled)
-     **Active: active (running) since Wed 2024-09-04 11:52:40 UTC; 20min ago**
-       Docs: <https://opensearch.org/>
-   Main PID: 3763 (java)
-      Tasks: 88 (limit: 9358)
-     Memory: 4.4G
-        CPU: 52.860s
-     CGroup: /system.slice/opensearch.service
-             └─3763 /usr/share/opensearch/jdk/bin/java -Xshare:auto -Dopensearch.networkaddress.cache.ttl=60 -Dopensearch.networkaddress.cache.negative.ttl=>
-
-Sep 04 11:52:30 logging systemd-entrypoint[3763]: WARNING: System::setSecurityManager has been called by org.opensearch.bootstrap.OpenSearch (file:/usr/shar>
-Sep 04 11:52:30 logging systemd-entrypoint[3763]: WARNING: Please consider reporting this to the maintainers of org.opensearch.bootstrap.OpenSearch
-Sep 04 11:52:30 logging systemd-entrypoint[3763]: WARNING: System::setSecurityManager will be removed in a future release
-Sep 04 11:52:31 logging systemd-entrypoint[3763]: Sep 04, 2024 12:52:31 PM sun.util.locale.provider.LocaleProviderAdapter <clinit>
-Sep 04 11:52:31 logging systemd-entrypoint[3763]: WARNING: COMPAT locale provider will be removed in a future release
-Sep 04 11:52:31 logging systemd-entrypoint[3763]: WARNING: A terminally deprecated method in java.lang.System has been called
-Sep 04 11:52:31 logging systemd-entrypoint[3763]: WARNING: System::setSecurityManager has been called by org.opensearch.bootstrap.Security (file:/usr/share/>
-Sep 04 11:52:31 logging systemd-entrypoint[3763]: WARNING: Please consider reporting this to the maintainers of org.opensearch.bootstrap.Security
-Sep 04 11:52:31 logging systemd-entrypoint[3763]: WARNING: System::setSecurityManager will be removed in a future release
-Sep 04 11:52:40 logging systemd[1]: Started opensearch.service - OpenSearch.
-```
-
-#### Graylog-server
-
-```
 sudo systemctl status graylog-server
-```
-
-```
-● graylog-server.service - Graylog server
-     Loaded: loaded (/lib/systemd/system/graylog-server.service; enabled; preset: enabled)
-     **Active: active (running) since Wed 2024-09-04 12:09:22 UTC; 4min 56s ago**
-       Docs: <http://docs.graylog.org/>
-   Main PID: 5236 (graylog-server)
-      Tasks: 131 (limit: 9358)
-     Memory: 821.5M
-        CPU: 45.499s
-     CGroup: /system.slice/graylog-server.service
-             ├─5236 /bin/sh /usr/share/graylog-server/bin/graylog-server
-             └─5237 /usr/share/graylog-server/jvm/bin/java -Xms1g -Xmx1g -server -XX:+UseG1GC -XX:-OmitStackTraceInFastThrow -Djdk.tls.acknowledgeCloseNotif>
-
-Sep 04 12:09:22 logging systemd[1]: Started graylog-server.service - Graylog server.
-```
-
-#### Open Ports
-
-If all the services are running, the following ports should be open
-
-```
-sudo ss -plnt
-```
-
-```
-State       Recv-Q       Send-Q                           Local Address:Port              Peer Address:Port      Process                                                 
-LISTEN      0            4096                                 127.0.0.1:27017                  0.0.0.0:*          users:(("mongod",pid=2338,fd=14))            
-LISTEN      0            4096                                         *:9200                         *:*          users:(("java",pid=3763,fd=636))           
-LISTEN      0            4096                                         *:9000                         *:*          users:(("java",pid=5237,fd=80))                       
-LISTEN      0            4096                                         *:9300                         *:*          users:(("java",pid=3763,fd=634))    
-```
-
-→ Check Login
-
-Open up
-
-```
-http://<server ip>:9000
-```
-
-Login with admin and the password you created earlier
-
-(the one you entered at the password prompt not the sha string)
-
-
-We will set up Graylog later
-
-### → Graylogs log file
-
-This caught me out because my mondod wasn’t running, and journalctl -u graylog-server didn’t give anything other than graylog had started but port 9000 wasn’t available.
-
-The Log files for troubleshooting are
-
-```
-sudo tail -f /var/log/graylog-server/server.log
-```
-
-Output
-
-```
-2024-09-04T13:09:34.214+01:00 INFO  [MongoIndexSet] Index <gl-system-events_0> has been successfully allocated.
-2024-09-04T13:09:34.214+01:00 INFO  [MongoIndexSet] Pointing index alias <gl-system-events_deflector> to new index <gl-system-events_0>.
-2024-09-04T13:09:34.246+01:00 INFO  [MongoIndexSet] Successfully pointed index alias <gl-system-events_deflector> to index <gl-system-events_0>.
-2024-09-04T13:09:34.609+01:00 INFO  [NetworkListener] Started listener bound to [0.0.0.0:9000]
-2024-09-04T13:09:34.610+01:00 INFO  [HttpServer] [HttpServer] Started.
-2024-09-04T13:09:34.611+01:00 INFO  [JerseyService] Started REST API at <0.0.0.0:9000>
-2024-09-04T13:09:34.611+01:00 INFO  [ServiceManagerListener] Services are healthy
-2024-09-04T13:09:34.612+01:00 INFO  [ServerBootstrap] Services started, startup times in ms: {LocalKafkaMessageQueueReader [RUNNING]=0, UrlWhitelistService [RUNNING]=0, InputSetupService [RUNNING]=0, UserSessionTerminationService [RUNNING]=0, GracefulShutdownService [RUNNING]=0, LocalKafkaMessageQueueWriter [RUNNING]=1, FailureHandlingService [RUNNING]=1, PrometheusExporter [RUNNING]=1, OutputSetupService [RUNNING]=2, GeoIpDbFileChangeMonitorService [RUNNING]=2, BufferSynchronizerService [RUNNING]=4, EtagService [RUNNING]=5, StreamCacheService [RUNNING]=7, MongoDBProcessingStatusRecorderService [RUNNING]=12, LookupTableService [RUNNING]=12, NotificationSystemEventPublisher [RUNNING]=16, JobSchedulerService [RUNNING]=37, LocalKafkaJournal [RUNNING]=40, PeriodicalsService [RUNNING]=55, ConfigureCertRenewalJobOnStartupService [RUNNING]=79, JerseyService [RUNNING]=1351}
-2024-09-04T13:09:34.612+01:00 INFO  [InputSetupService] Triggering launching persisted inputs, node transitioned from Uninitialized [LB:DEAD] to Running [LB:ALIVE]
-2024-09-04T13:09:34.613+01:00 INFO  [ServerBootstrap] Graylog server up and running.
-```
-
-**Graylog** the service will start, however the application won’t until it sees **mongodb** and **opensearch** ports open
-
-## Graylog UI configuration
-
-We will use Filebeat to push the local logs from the “client” servers into the Graylog server, to do this, we need to create an input for Filebeat on Graylog.
-
-### → Create Inputs
-
-Within Graylog click on **System → Inputs**
-
-![image.png](https://prod-files-secure.s3.us-west-2.amazonaws.com/d56e23bf-2ad0-456f-b113-a01e394b2b74/603418de-15df-4f0b-ac90-821e3dbd0098/image.png)
-
-Under **Select input** choose **Beats**
-
-![image.png](https://prod-files-secure.s3.us-west-2.amazonaws.com/d56e23bf-2ad0-456f-b113-a01e394b2b74/a1176f7f-dc62-4e32-bb68-b7a02d832c22/image.png)
-
-Select **Launch New Input**
-
-![image.png](https://prod-files-secure.s3.us-west-2.amazonaws.com/d56e23bf-2ad0-456f-b113-a01e394b2b74/b19a2e2b-2c74-4ff7-b67b-69da49c0e1e9/image.png)
-
-In the Popup Give the Input a title
-
-![image.png](https://prod-files-secure.s3.us-west-2.amazonaws.com/d56e23bf-2ad0-456f-b113-a01e394b2b74/61eee5a2-d427-4931-98df-b89a529d5f28/image.png)
-
-Scrill to the bottom and click on **Launch Input**
-
-![image.png](https://prod-files-secure.s3.us-west-2.amazonaws.com/d56e23bf-2ad0-456f-b113-a01e394b2b74/915914d2-061a-41f4-89e1-0c52dcb36d1d/image.png)
-
-This will start this input
-
-![image.png](https://prod-files-secure.s3.us-west-2.amazonaws.com/d56e23bf-2ad0-456f-b113-a01e394b2b74/fcd4c345-e866-42b5-aa92-9bde85f4d4a5/image.png)
-
-If the command
-
-```
-sudo s -plnt
-```
-
-Is run on the graylog server the port 5044 should be open
-
-```
-LISTEN      0  4096    *:5044   *:*          users:(("java",pid=5237,fd=111))  
-```
-
-Graylog is now installed and ready to receive data
-
-### Graylog Server - Test Data
-
-At this point, graylog is working and filebeat is setup, lets see what data we can view
-
-### → View Data
-
-Open the Graylog Web Portal
-
-```
-http://<server ip>:9000/search
-```
-
-![image.png](https://prod-files-secure.s3.us-west-2.amazonaws.com/d56e23bf-2ad0-456f-b113-a01e394b2b74/1ba7115a-2b5d-4a46-a718-6eaab5fab8b8/image.png)
-
-## Troubleshooting
-
-### → Greylog server Java Ram
-
-By default Graylog uses 1Gb or ram for the Java stack it runs on. to change this edit the file
-
-```
-sudo nano /etc/default/graylog-server 
-```
-
-Edit the line and change the `**Xms1g -Xmx1g**`
-
-```
-GRAYLOG_SERVER_JAVA_OPTS="-**Xms4g -Xmx4g** -server -XX:+UseG1GC -XX:-OmitStackTraceInFastThrow"
-```
-
-Restart the server
-
-```
-sudo systemctl restart graylog-server
-```
-
-```
-http://<server ip>:9000/system/nodes
-```
-
-![image.png](https://prod-files-secure.s3.us-west-2.amazonaws.com/d56e23bf-2ad0-456f-b113-a01e394b2b74/bae27e38-6897-4fb7-afe5-846a57d1c645/image.png)
-
-### → Graylog is showing a system error about dropping elastic search messages.
-
-When you fuirst start pointing all the nodes to graylog it gets a bit overwhelmed and starts alerting that its dropping messages before they are processed.
-
-To fix this edit
-
-```
-sudo nano /etc/graylog/server/server.conf
-```
-
-find
-
-```
-#message_journal_max_age = 12h
-#message_journal_max_size = 5g
-```
-
-change them as apropriate
-
-```
-message_journal_max_age = 6h
-message_journal_max_size = 15gb
-```
-
-Restart the server
-
-
-
-Deploy the Filebeat Client
-
-## Client Installation - Filebeat
-
-There are other options such as `systemd-journal-remote`/`systemd-journal-upload` I’ve used filebeat as I have used it on other servers in the past.
-
-### → Install
-
-Install required software
-
-```
-sudo apt install sudo gnupg2 apt-transport-https curl -y
-```
-
-Import the key for elastic
-
-```
-wget -qO - <https://artifacts.elastic.co/GPG-KEY-elasticsearch> | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/elastic.gpg
-```
-
-Add the elastic APT repo
-
-```
-echo "deb <https://artifacts.elastic.co/packages/8.x/apt> stable main" | sudo tee /etc/apt/sources.list.d/elastic-8.list
-```
-
-Update
-
-```
-sudo apt update
-```
-
-Install Filebeat
-
-```
-sudo apt install filebeat
-```
-
-Check version
-
-```
-filebeat version
-```
-
-Returns something like:
-
-```
-filebeat version 8.15.0 (amd64), libbeat 8.15.0 [76f45fe4dfkjdfjk36be495d2e1af08243 built 2024-08-02 17:15:22 +0000 UTC]
-```
-
-### → Configure
-
-Edit the filebeat config
-
-**Note: this is a YAML file so be aware of tabs and spaces**
-
-```
-sudo nano /etc/filebeat/filebeat.yml
-```
-
-The following changes need to be made to this file
-
-Filebeat Inputs
-
-```
-# ============================== Filebeat inputs ===============================
-
-filebeat.inputs:
-
-# Each - is an input. Most options can be set at the input level, so
-# you can use different inputs for various configurations.
-# Below are the input-specific configurations.
-
-# filestream is an input for collecting log messages from files.
-**- type: journald**
-
-  # Unique ID among all inputs, an ID is required.
-  **id: management-jorunald-input**
-
-  # Change to true to enable this input configuration.
-  **enabled: true**
-
-  # Paths that should be crawled and fetched. Glob based paths.
-  paths:
-    **- /var/log/journal**
-    #- c:\\programdata\\elasticsearch\\logs\\*
-```
-
-Comment out Elastic Search Output
-
-```
-# ---------------------------- Elasticsearch Output ----------------------------
-#output.elasticsearch:
-  # Array of hosts to connect to.
- # hosts: [100.68.57.126:9200"]
-
-  # Performance preset - one of "balanced", "throughput", "scale",
-  # "latency", or "custom".
-  #preset: balanced
-
-  # Protocol - either `http` (default) or `https`.
-  #protocol: "https"
-
-  # Authentication credentials - either API key or username/password.
-  #api_key: "id:api_key"
-  #username: "elastic"
-  #password: "changeme"
-```
-
-Edit Logstash Output
-
-```
-# ------------------------------ Logstash Output -------------------------------
-**output.logstash:**
-  # The Logstash hosts
-  **hosts: ["<graylog server>:5044"]**
-```
-
-Save and exit the file
-
-### → Run
-
-```
-sudo systemctl enable --now filebeat
-```
-
-Check its running
-
-```
-sudo systemctl status filebeat
-```
-
-should return
-
-```
-● filebeat.service - Filebeat sends log files to Logstash or directly to Elasticsearch.
-     Loaded: loaded (/lib/systemd/system/filebeat.service; disabled; preset: enabled)
-     Active: active (running) since Wed 2024-09-04 12:40:23 UTC; 32s ago
-       Docs: <https://www.elastic.co/beats/filebeat>
-   Main PID: 412066 (filebeat)
-      Tasks: 8 (limit: 2234)
-     Memory: 123.2M
-        CPU: 9.211s
-     CGroup: /system.slice/filebeat.service
-             └─412066 /usr/share/filebeat/bin/filebeat --environment systemd -c /etc/filebeat/filebeat.yml --path.home /usr/share/filebeat --path.config /et>
-
-```
-
-## Deploy Using Ansible
-
-The following ansible play will deploy the filebeat to multple servers, keep both files in the same folder
-
-### → Playbook - playbook-filebeat.yaml
-
-```yaml
----
-- name: Install Filebeat on Debian 12
-  hosts: proxmox
-  become: yes
-  tasks:
-    - name: Ensure prerequisites are installed
-      apt:
-        name:
-          - gnupg2
-          - apt-transport-https
-          - curl
-        state: present
-
-    - name: Add Elastic GPG key
-      apt_key:
-        url: <https://artifacts.elastic.co/GPG-KEY-elasticsearch>
-        state: present
-
-    - name: Add Elastic APT repository
-      apt_repository:
-        repo: "deb <https://artifacts.elastic.co/packages/8.x/apt> stable main"
-        state: present
-        filename: 'elastic-8'
-
-    - name: Update APT package cache
-      apt:
-        update_cache: yes
-
-    - name: Install Filebeat
-      apt:
-        name: filebeat
-        state: present
-
-    - name: Copy new Filebeat configuration
-      copy:
-        src: filebeat.yml
-        dest: /etc/filebeat/filebeat.yml
-        owner: root
-        group: root
-        mode: '0644'
-
-    - name: Verify Filebeat configuration
-      command: filebeat test config
-      register: filebeat_config_test
-      changed_when: false
-
-    - name: Display Filebeat configuration test results
-      debug:
-        var: filebeat_config_test.stdout_lines
-
-    - name: Enable and start Filebeat service
-      systemd:
-        name: filebeat
-        enabled: yes
-        state: started
-
-    - name: Restart Filebeat service
-      systemd:
-        name: filebeat
-        state: restarted
-        enabled: yes
-```
-
-Change the line `hosts:` to relfect your inventory setup
-
-### → filebeat.yml
-
-```yaml
-
-# ============================== Filebeat inputs ===============================
-
-filebeat.inputs:
-
-# Each - is an input. Most options can be set at the input level, so
-# you can use different inputs for various configurations.
-# Below are the input-specific configurations.
-
-# filestream is an input for collecting log messages from files.
-- type: journald
-
-  # Unique ID among all inputs, an ID is required.
-  id: journald-input
-
-  # Change to true to enable this input configuration.
-  enabled: true
-
-  # Paths that should be crawled and fetched. Glob based paths.
-  paths:
-    - /var/log/journal
-    #- c:\\programdata\\elasticsearch\\logs\\*
-
-  
-# ============================== Filebeat modules ==============================
-
-filebeat.config.modules:
-  # Glob pattern for configuration loading
-  path: ${path.config}/modules.d/*.yml
-
-  # Set to true to enable config reloading
-  reload.enabled: false
-
-  # Period on which files under path should be checked for changes
-  #reload.period: 10s
-
-# ======================= Elasticsearch template setting =======================
-
-setup.template.settings:
-  index.number_of_shards: 1
-  #index.codec: best_compression
-  #_source.enabled: false
-
-# ------------------------------ Logstash Output -------------------------------
-output.logstash:
-  # The Logstash hosts
-  hosts: ["<server-ip>:5044"]
-
-  # Optional SSL. By default is off.
-  # List of root certificates for HTTPS server verifications
-  #ssl.certificate_authorities: ["/etc/pki/root/ca.pem"]
-
-  # Certificate for SSL client authentication
-  #ssl.certificate: "/etc/pki/client/cert.pem"
-
-  # Client Certificate Key
-  #ssl.key: "/etc/pki/client/cert.key"
-
-# ================================= Processors =================================
-processors:
-  - add_host_metadata:
-      when.not.contains.tags: forwarded
-  - add_cloud_metadata: ~
-  - add_docker_metadata: ~
-  - add_kubernetes_metadata: ~
-
-```
-
-**Note:**
-
-Remember to edit `hosts: ["<server-ip>:5044"]`
-
-Put the IP of your graylog server
