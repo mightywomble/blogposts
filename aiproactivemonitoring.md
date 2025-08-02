@@ -1,4 +1,4 @@
-# **The Future is Here: Witness Proactive Observability with the AI Proactive Monitoring Service**
+# The Future is Here: Witness Proactive Observability with the AI Proactive Monitoring Service
 
 **August 2, 2025**
 
