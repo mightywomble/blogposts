@@ -22,6 +22,8 @@ The challenge has always been that this ground truth is scattered, dense, and di
 
 ### Introducing: The Local & Remote Log Viewer with AI Analysis
 
+**GitHub**: https://github.com/mightywomble/ailog
+
 What if you could tame the firehose of log data? What if you could bring all your logs—from your local machine and every remote server—into a single, elegant web interface? And what if you could supercharge it with AI to not just view the data, but to understand it for you?
 
 This is precisely why we built the Local & Remote Log Viewer with AI Analysis. It’s a tool designed to elevate your logs from a reactive, forensic resource into a proactive, intelligent source of truth for observability.
