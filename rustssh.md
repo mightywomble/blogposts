@@ -4,6 +4,7 @@ The world of software development is ever-evolving, and the rise of AI is one of
 
 <iframe width="560" height="315" src="https://www.youtube.com/embed/1kWCu4cJ8XM?si=ZYklKNXb6YMqgFnc" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
 
+Github Repo: https://github.com/mightywomble/sshtui
 
 ### The Spark of an Idea: An SSH Manager in the Terminal
 
