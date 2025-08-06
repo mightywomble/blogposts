@@ -3,7 +3,7 @@
 The world of software development is ever-evolving, and the rise of AI is one of the most exciting recent developments. I recently embarked on a coding journey that took an unexpected, but fascinating, turn thanks to agentic AI. Here’s the story of how my simple SSH manager app idea blossomed into a testament to the power of "vibe coding" with an AI partner.
 
 -----
-<iframe width="560" height="315" src="[https://www.youtube.com/embed/1kWCu4cJ8XM?si=yRymy6qVnigu8Q4p](https://www.youtube.com/embed/1kWCu4cJ8XM?si=yRymy6qVnigu8Q4p)" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen\>\</iframe\>
+<iframe width="560" height="315" src="https://www.youtube.com/embed/1kWCu4cJ8XM?si=ZYklKNXb6YMqgFnc" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
 
 
 -----
