@@ -125,6 +125,7 @@ Scroll to the bottom of the file and add the following line. Remember to replace
 # Allow the 'david' user to run specific log-reading commands without a password
 david ALL=(ALL) NOPASSWD: /usr/bin/ls -p /var/log, /usr/bin/stat -c %s %Y /var/log/*, /usr/bin/tail -n 500 /var/log/*, /usr/bin/zcat /var/log/*.gz, /usr/bin/journalctl --field _SYSTEMD_UNIT, /usr/bin/journalctl -u * -n 500 --no-pager
 ```
+test
 
 Save and exit the editor (Ctrl+X, then Y, then Enter).
 
