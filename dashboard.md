@@ -58,3 +58,4 @@ If you’re intrigued by the prospect of trying out my Personal Dashboard Applic
 I take great pride in what I’ve created and invite you to explore it further. The entire project is open source and available on GitHub, where you can find the repository at this link: https://github.com/mightywomble/dashboard
 
 I genuinely hope that my Personal Dashboard Application proves as useful to you as it has been for me. I welcome any feedback or suggestions you may have, so please don’t hesitate to open an issue or pull request on GitHub.
+<!-- Review Status: Ready for Review -->
