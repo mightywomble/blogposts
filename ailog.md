@@ -194,3 +194,4 @@ Once the service is running, access the application by navigating to your server
     Scheduled Monitoring: In Settings, select which logs to monitor on a recurring basis for each host.
 
 Stop chasing ghosts in your dashboards. It's time to embrace the ground truth hidden in your logs and turn data into answers.
+<!-- Review Status: Ready for Review -->
