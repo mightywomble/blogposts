@@ -2,3 +2,4 @@
 {"ts":"2026-03-03T12:31:22.234048+00:00","actor":"unknown","event":"content_updated","pr_number":8,"commit":"967da03205086db8f3d5514b3b5e1c528681cb7f","message":"Update: test document.md"}
 {"ts":"2026-03-03T12:31:57.938756+00:00","actor":"unknown","event":"submitted_for_review","pr_number":8}
 {"ts":"2026-03-03T13:13:57.779178+00:00","actor":"unknown","event":"approved","pr_number":8}
+{"ts":"2026-03-03T13:14:05.105644+00:00","actor":"unknown","event":"merged","pr_number":8,"merge_sha":"5328708e0f61501af9847c0481325b6a33406cef"}
