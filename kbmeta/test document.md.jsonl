@@ -1,1 +1,2 @@
 {"ts":"2026-03-03T12:30:16.652253+00:00","actor":"unknown","event":"created","pr_number":8,"head":"kb/doc/test-document_md","base":"main"}
+{"ts":"2026-03-03T12:31:22.234048+00:00","actor":"unknown","event":"content_updated","pr_number":8,"commit":"967da03205086db8f3d5514b3b5e1c528681cb7f","message":"Update: test document.md"}
